@@ -15,6 +15,6 @@ def read_shapefile(file_path):
 
 
 read_shapefile(shapefile_path) 
-test add2
+
 
 # %%
