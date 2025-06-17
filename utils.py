@@ -9,7 +9,9 @@ def read_shapefile(file_path):
     new_gdf = gdf[gdf["normal_dist"] > 0]
     print(f"Read {len(gdf)} features from {file_path}")
     print(f"CRS: {gdf.crs}")
-    print("columns: ",gdf.columns.tolist())
+    # print("columns: ",gdf.columns.tolist())
+
+    print("somethng new")
 
 
 read_shapefile(shapefile_path) 
