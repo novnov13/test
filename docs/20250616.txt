@@ -38,6 +38,7 @@
         git commit -m "init repo"         # Commit staged changes
         git push                        # Push changes to remote
         git pull                        # Fetch and merge from remote
+        git show-ref                    # to check the remote name and branches
     2.4 branching
         git branch                      # List branches
         git branch <name>               # Create branch
