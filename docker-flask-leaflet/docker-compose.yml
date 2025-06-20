@@ -1,0 +1,7 @@
+services:
+  web:
+    build: ./backend
+    ports:
+      - "5000:3000"
+    volumes:
+      - ./frontend:/app/frontend

@@ -1,0 +1,23 @@
+# Project Structure:
+# geojson-app/
+# ├── backend/
+# │   ├── app.py
+# │   ├── requirements.txt
+# │   ├── .dockerignore
+# │   ├── Dockerfile
+# │   └── geojson
+# │         └── cityhall.geojson
+# ├── frontend/
+# │   ├── index.html
+# │   └── app.js
+# └── docker-compose.yml
+
+db for storing data
+- SQL db
+- No-SQL DB
+- skip for now
+
+API developemnt
+1. install flask
+
+Web app
