@@ -21,3 +21,7 @@ API developemnt
 1. install flask
 
 Web app
+
+Dockerfile
+1. prepare the requirements.txt
+pip freeze > requirements.txt
