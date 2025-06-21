@@ -15,11 +15,14 @@ def upload():
     centrality_type = request.form.get("centrality", "degree")
 
     df = pd.read_csv(file)
-    G = nx.from_pandas_edgelist(df, source='source', target='target')
+    df['distance'] = df['distance'].astype(float)
+    # 'distance'があれば、それをエッジの重みとして使用
+    G = nx.from_pandas_edgelist(df, source='node1', target='node2', edge_attr='distance')
 
+    # 中心性を計算
     centralities = {
         "degree": nx.degree_centrality(G),
-        "closeness": nx.closeness_centrality(G)
+        "closeness": nx.closeness_centrality(G, distance='distance')
     }
 
     data = {
@@ -32,12 +35,17 @@ def upload():
                 }
             } for n in G.nodes()
         ],
-        "links": [{"source": str(u), "target": str(v)} for u, v in G.edges()]
+        "links": [
+            {
+                "source": str(u),
+                "target": str(v),
+                "distance": G[u][v].get("distance", 0)  # 重み (distance)
+            }
+            for u, v in G.edges()
+        ]
     }
 
     return jsonify(data)
-
-
 
 if __name__ == "__main__":
     app.run(debug=True)

@@ -20,7 +20,7 @@
 </head>
 <body>
   <h1>NetworkX グラフ可視化</h1>
-  <p>CSVエッジリスト（source,target）をアップロードしてください。</p>
+  <p>CSVエッジリスト（node1,node2,distance）をアップロードしてください。</p>
 
   <input type="file" id="fileInput" />
   <label for="centralityType">中心性:</label>
@@ -95,9 +95,19 @@
     .attr("stroke", "#aaa")
     .selectAll("line")
     .data(graph.links)
-    .join("line");
+    .join("line")
+    .attr("stroke-width", 2);
 
-  // ノードグループ（circle + text）
+  // 🔽 ここが追加部分：エッジラベル
+  const edgeLabels = svg.append("g")
+    .selectAll("text")
+    .data(graph.links)
+    .join("text")
+    .attr("font-size", "10px")
+    .attr("fill", "#333")
+    .attr("text-anchor", "middle")
+    .text(d => d.distance);
+
   const nodeGroup = svg.append("g")
     .selectAll("g")
     .data(graph.nodes)
@@ -112,7 +122,6 @@
     .attr("stroke", "#fff")
     .attr("stroke-width", 1.5);
 
-  // ラベル（ノード名）
   nodeGroup.append("text")
     .text(d => d.id)
     .attr("x", 0)
@@ -121,7 +130,6 @@
     .attr("font-size", "12px")
     .attr("fill", "#333");
 
-  // ツールチップ
   nodeGroup.append("title")
     .text(d => `${d.id}\n${centralityType}: ${d.centrality[centralityType].toFixed(3)}`);
 
@@ -133,26 +141,32 @@
       .attr("y2", d => d.target.y);
 
     nodeGroup.attr("transform", d => `translate(${d.x},${d.y})`);
-  });
 
-  function drag(simulation) {
-    return d3.drag()
-      .on("start", (event, d) => {
-        if (!event.active) simulation.alphaTarget(0.3).restart();
-        d.fx = d.x;
-        d.fy = d.y;
-      })
-      .on("drag", (event, d) => {
-        d.fx = event.x;
-        d.fy = event.y;
-      })
-      .on("end", (event, d) => {
-        if (!event.active) simulation.alphaTarget(0);
-        d.fx = null;
-        d.fy = null;
-      });
-  }
+    // 🔽 エッジラベルの位置更新
+    edgeLabels
+      .attr("x", d => (d.source.x + d.target.x) / 2)
+      .attr("y", d => (d.source.y + d.target.y) / 2);
+  });
 }
+
+function drag(simulation) {
+  return d3.drag()
+    .on("start", (event, d) => {
+      if (!event.active) simulation.alphaTarget(0.3).restart();
+      d.fx = d.x;
+      d.fy = d.y;
+    })
+    .on("drag", (event, d) => {
+      d.fx = event.x;
+      d.fy = event.y;
+    })
+    .on("end", (event, d) => {
+      if (!event.active) simulation.alphaTarget(0);
+      d.fx = null;
+      d.fy = null;
+    });
+}
+
 
   </script>
 </body>
