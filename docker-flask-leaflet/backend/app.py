@@ -25,12 +25,12 @@ def geojson():
 
 @app.route("/")
 def serve_frontend():
-    return send_from_directory("/app/frontend", "index.html")
+    return send_from_directory("../frontend", "index.html")
 
 
 @app.route("/app.js")
 def serve_js():
-    return send_from_directory("/app/frontend", "app.js")
+    return send_from_directory("../frontend", "app.js")
 
 
 if __name__ == "__main__":

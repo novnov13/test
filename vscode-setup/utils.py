@@ -3,7 +3,7 @@
 import geopandas as gpd
 import numpy as np
 #shapefile_path = "./data/bus_kasugai.shp"
-shapefile_path = "./data/bus.geojson"
+shapefile_path = "../data/bus.geojson"
 
 def read_shapefile(file_path):
     gdf = gpd.read_file(file_path, encoding='UTF-8', errors="replace")

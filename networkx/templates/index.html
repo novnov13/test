@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>NetworkX グラフ可視化</title>
+  <script src="https://d3js.org/d3.v6.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+    }
+    svg {
+      border: 1px solid #ccc;
+      margin-top: 20px;
+    }
+    #error {
+      color: red;
+    }
+  </style>
+</head>
+<body>
+  <h1>NetworkX グラフ可視化</h1>
+  <p>CSVエッジリスト（source,target）をアップロードしてください。</p>
+
+  <input type="file" id="fileInput" />
+  <label for="centralityType">中心性:</label>
+  <select id="centralityType">
+    <option value="degree">次数中心性</option>
+    <option value="closeness">近接中心性</option>
+  </select>
+
+  <div id="error"></div>
+  <svg width="800" height="600"></svg>
+
+  <script>
+    const svg = d3.select("svg");
+    const errorDiv = document.getElementById("error");
+    const centralitySelect = document.getElementById("centralityType");
+
+    let currentGraph = null;
+
+    document.getElementById("fileInput").addEventListener("change", function () {
+      const file = this.files[0];
+      if (!file) return;
+
+      const centrality = centralitySelect.value;
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("centrality", centrality);
+
+      fetch("/upload", {
+        method: "POST",
+        body: formData,
+      })
+        .then(res => {
+          if (!res.ok) throw new Error("アップロード失敗");
+          return res.json();
+        })
+        .then(graph => {
+          currentGraph = graph;
+          drawGraph(graph);
+        })
+        .catch(err => {
+          errorDiv.textContent = "エラー: " + err.message;
+        });
+    });
+
+    centralitySelect.addEventListener("change", () => {
+      if (currentGraph) {
+        drawGraph(currentGraph);
+      }
+    });
+
+    function drawGraph(graph) {
+  errorDiv.textContent = "";
+  svg.selectAll("*").remove();
+
+  const width = +svg.attr("width");
+  const height = +svg.attr("height");
+  const centralityType = centralitySelect.value;
+
+  const maxCentrality = d3.max(graph.nodes, d => d.centrality[centralityType]);
+
+  const sizeScale = d3.scaleLinear()
+    .domain(d3.extent(graph.nodes, d => d.centrality[centralityType]))
+    .range([5, 25]);
+
+  const simulation = d3.forceSimulation(graph.nodes)
+    .force("link", d3.forceLink(graph.links).id(d => d.id).distance(100))
+    .force("charge", d3.forceManyBody().strength(-200))
+    .force("center", d3.forceCenter(width / 2, height / 2));
+
+  const link = svg.append("g")
+    .attr("stroke", "#aaa")
+    .selectAll("line")
+    .data(graph.links)
+    .join("line");
+
+  // ノードグループ（circle + text）
+  const nodeGroup = svg.append("g")
+    .selectAll("g")
+    .data(graph.nodes)
+    .join("g")
+    .call(drag(simulation));
+
+  nodeGroup.append("circle")
+    .attr("r", d => sizeScale(d.centrality[centralityType]))
+    .attr("fill", d =>
+      d.centrality[centralityType] === maxCentrality ? "red" : "steelblue"
+    )
+    .attr("stroke", "#fff")
+    .attr("stroke-width", 1.5);
+
+  // ラベル（ノード名）
+  nodeGroup.append("text")
+    .text(d => d.id)
+    .attr("x", 0)
+    .attr("y", d => -sizeScale(d.centrality[centralityType]) - 5)
+    .attr("text-anchor", "middle")
+    .attr("font-size", "12px")
+    .attr("fill", "#333");
+
+  // ツールチップ
+  nodeGroup.append("title")
+    .text(d => `${d.id}\n${centralityType}: ${d.centrality[centralityType].toFixed(3)}`);
+
+  simulation.on("tick", () => {
+    link
+      .attr("x1", d => d.source.x)
+      .attr("y1", d => d.source.y)
+      .attr("x2", d => d.target.x)
+      .attr("y2", d => d.target.y);
+
+    nodeGroup.attr("transform", d => `translate(${d.x},${d.y})`);
+  });
+
+  function drag(simulation) {
+    return d3.drag()
+      .on("start", (event, d) => {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+      })
+      .on("drag", (event, d) => {
+        d.fx = event.x;
+        d.fy = event.y;
+      })
+      .on("end", (event, d) => {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+      });
+  }
+}
+
+  </script>
+</body>
+</html>
