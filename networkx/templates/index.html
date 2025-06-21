@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>NetworkX グラフ可視化</title>
   <script src="https://d3js.org/d3.v6.min.js"></script>
   <style>
@@ -12,9 +12,19 @@
     svg {
       border: 1px solid #ccc;
       margin-top: 20px;
+      background-color: #fafafa;
     }
     #error {
       color: red;
+    }
+    .container {
+      display: flex;
+      gap: 40px;
+      flex-wrap: wrap;
+    }
+    .chart-wrapper {
+      flex: 1 1 45%;
+      min-width: 400px;
     }
   </style>
 </head>
@@ -28,145 +38,214 @@
     <option value="degree">次数中心性</option>
     <option value="closeness">近接中心性</option>
   </select>
-
   <div id="error"></div>
-  <svg width="800" height="600"></svg>
 
-  <script>
-    const svg = d3.select("svg");
-    const errorDiv = document.getElementById("error");
-    const centralitySelect = document.getElementById("centralityType");
+  <div class="container">
+    <div class="chart-wrapper">
+      <h2>NetworkX グラフ</h2>
+      <svg id="graphSvg" width="800" height="600"></svg>
+    </div>
 
-    let currentGraph = null;
+    <div class="chart-wrapper">
+      <h2>GeoJSON 分布図</h2>
+      <label for="maxPointSize">分布図 最大点サイズ: <span id="maxSizeValue">25</span></label>
+      <input type="range" id="maxPointSize" min="5" max="100" value="25" />
+      <svg id="distributionSvg" width="800" height="600"></svg>
+    </div>
+  </div>
 
-    document.getElementById("fileInput").addEventListener("change", function () {
-      const file = this.files[0];
-      if (!file) return;
+<script>
+  const graphSvg = d3.select("#graphSvg");
+  const distributionSvg = d3.select("#distributionSvg");
+  const errorDiv = document.getElementById("error");
+  const centralitySelect = document.getElementById("centralityType");
+  const maxPointSizeSlider = document.getElementById("maxPointSize");
+  const maxSizeValueSpan = document.getElementById("maxSizeValue");
 
-      const centrality = centralitySelect.value;
+  let currentGraph = null;
 
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("centrality", centrality);
+  document.getElementById("fileInput").addEventListener("change", function () {
+    const file = this.files[0];
+    if (!file) return;
 
-      fetch("/upload_geojson", {
-        method: "POST",
-        body: formData,
+    const centrality = centralitySelect.value;
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("centrality", centrality);
+
+    fetch("/upload_geojson", {
+      method: "POST",
+      body: formData,
+    })
+      .then(res => {
+        if (!res.ok) throw new Error("アップロード失敗");
+        return res.json();
       })
-        .then(res => {
-          if (!res.ok) throw new Error("アップロード失敗");
-          return res.json();
+      .then(graph => {
+        currentGraph = graph;
+        drawGraph(graph);
+        drawDistribution(graph);
+      })
+      .catch(err => {
+        errorDiv.textContent = "エラー: " + err.message;
+      });
+  });
+
+  centralitySelect.addEventListener("change", () => {
+    if (currentGraph) {
+      drawGraph(currentGraph);
+      drawDistribution(currentGraph);
+    }
+  });
+
+  maxPointSizeSlider.addEventListener("input", () => {
+    maxSizeValueSpan.textContent = maxPointSizeSlider.value;
+    if (currentGraph) {
+      drawDistribution(currentGraph);
+    }
+  });
+
+  function drawGraph(graph) {
+    errorDiv.textContent = "";
+    graphSvg.selectAll("*").remove();
+
+    const width = +graphSvg.attr("width");
+    const height = +graphSvg.attr("height");
+    const centralityType = centralitySelect.value;
+
+    const maxCentrality = d3.max(graph.nodes, d => d.centrality);
+
+    const sizeScale = d3.scaleLinear()
+      .domain([0, maxCentrality])
+      .range([5, 25]);
+
+    const simulation = d3.forceSimulation(graph.nodes)
+      .force("link", d3.forceLink(graph.links).id(d => d.id).distance(100))
+      .force("charge", d3.forceManyBody().strength(-200))
+      .force("center", d3.forceCenter(width / 2, height / 2));
+
+    const container = graphSvg.append("g");
+
+    graphSvg.call(d3.zoom()
+      .scaleExtent([0.1, 5])
+      .on("zoom", (event) => {
+        container.attr("transform", event.transform);
+      })
+    );
+
+    const link = container.append("g")
+      .attr("stroke", "#aaa")
+      .selectAll("line")
+      .data(graph.links)
+      .join("line")
+      .attr("stroke-width", 2);
+
+    // エッジラベル（距離）
+    const edgeLabels = container.append("g")
+      .selectAll("text")
+      .data(graph.links)
+      .join("text")
+      .attr("font-size", "10px")
+      .attr("fill", "#000")
+      .attr("text-anchor", "middle");
+
+    const nodeGroup = container.append("g")
+      .selectAll("g")
+      .data(graph.nodes)
+      .join("g")
+      .call(d3.drag()
+        .on("start", (event, d) => {
+          if (!event.active) simulation.alphaTarget(0.3).restart();
+          d.fx = d.x;
+          d.fy = d.y;
         })
-        .then(graph => {
-          currentGraph = graph;
-          drawGraph(graph);
+        .on("drag", (event, d) => {
+          d.fx = event.x;
+          d.fy = event.y;
         })
-        .catch(err => {
-          errorDiv.textContent = "エラー: " + err.message;
-        });
-    });
-
-    centralitySelect.addEventListener("change", () => {
-      if (currentGraph) {
-        drawGraph(currentGraph);
-      }
-    });
-
-    function drawGraph(graph) {
-      errorDiv.textContent = "";
-      svg.selectAll("*").remove();
-
-      const width = +svg.attr("width");
-      const height = +svg.attr("height");
-      const centralityType = centralitySelect.value;
-
-      const maxCentrality = d3.max(graph.nodes, d => d.centrality[centralityType]);
-
-      const sizeScale = d3.scaleLinear()
-        .domain(d3.extent(graph.nodes, d => d.centrality[centralityType]))
-        .range([5, 25]);
-
-      const simulation = d3.forceSimulation(graph.nodes)
-        .force("link", d3.forceLink(graph.links).id(d => d.id).distance(100))
-        .force("charge", d3.forceManyBody().strength(-200))
-        .force("center", d3.forceCenter(width / 2, height / 2));
-
-      const container = svg.append("g");
-
-      svg.call(d3.zoom()
-        .scaleExtent([0.1, 5])
-        .on("zoom", (event) => {
-          container.attr("transform", event.transform);
+        .on("end", (event, d) => {
+          if (!event.active) simulation.alphaTarget(0);
+          d.fx = null;
+          d.fy = null;
         })
       );
 
-      const link = container.append("g")
-        .attr("stroke", "#aaa")
-        .selectAll("line")
-        .data(graph.links)
-        .join("line")
-        .attr("stroke-width", 2);
+    nodeGroup.append("circle")
+      .attr("r", d => sizeScale(d.centrality))
+      .attr("fill", d => d.centrality === maxCentrality ? "red" : "steelblue")
+      .attr("stroke", "#fff")
+      .attr("stroke-width", 1.5);
 
-      const edgeLabels = container.append("g")
-        .selectAll("text")
-        .data(graph.links)
-        .join("text")
-        .attr("font-size", "10px")
-        .attr("fill", "#333")
-        .attr("text-anchor", "middle")
-        .text(d => parseFloat(d.distance).toFixed(2));
+    nodeGroup.append("text")
+      .text(d => d.id)
+      .attr("x", 0)
+      .attr("y", d => -sizeScale(d.centrality) - 5)
+      .attr("text-anchor", "middle")
+      .attr("font-size", "12px")
+      .attr("fill", "#333");
 
-      const nodeGroup = container.append("g")
-        .selectAll("g")
-        .data(graph.nodes)
-        .join("g")
-        .call(d3.drag()
-          .on("start", (event, d) => {
-            if (!event.active) simulation.alphaTarget(0.3).restart();
-            d.fx = d.x;
-            d.fy = d.y;
-          })
-          .on("drag", (event, d) => {
-            d.fx = event.x;
-            d.fy = event.y;
-          })
-          .on("end", (event, d) => {
-            if (!event.active) simulation.alphaTarget(0);
-            d.fx = null;
-            d.fy = null;
-          })
-        );
+    simulation.on("tick", () => {
+      link
+        .attr("x1", d => d.source.x)
+        .attr("y1", d => d.source.y)
+        .attr("x2", d => d.target.x)
+        .attr("y2", d => d.target.y);
 
-      nodeGroup.append("circle")
-        .attr("r", d => sizeScale(d.centrality[centralityType]))
-        .attr("fill", d =>
-          d.centrality[centralityType] === maxCentrality ? "red" : "steelblue"
-        )
-        .attr("stroke", "#fff")
-        .attr("stroke-width", 1.5);
+      edgeLabels
+        .attr("x", d => (d.source.x + d.target.x) / 2)
+        .attr("y", d => (d.source.y + d.target.y) / 2)
+        .text(d => d.distance.toFixed(2));
 
-      nodeGroup.append("text")
-        .text(d => d.id)
-        .attr("x", 0)
-        .attr("y", d => -sizeScale(d.centrality[centralityType]) - 5)
-        .attr("text-anchor", "middle")
-        .attr("font-size", "12px")
-        .attr("fill", "#333");
+      nodeGroup.attr("transform", d => `translate(${d.x},${d.y})`);
+    });
+  }
 
-      simulation.on("tick", () => {
-        link
-          .attr("x1", d => d.source.x)
-          .attr("y1", d => d.source.y)
-          .attr("x2", d => d.target.x)
-          .attr("y2", d => d.target.y);
+function drawDistribution(graph) {
+  distributionSvg.selectAll("*").remove();
 
-        edgeLabels
-          .attr("x", d => (d.source.x + d.target.x) / 2)
-          .attr("y", d => (d.source.y + d.target.y) / 2);
+  const width = +distributionSvg.attr("width");
+  const height = +distributionSvg.attr("height");
 
-        nodeGroup.attr("transform", d => `translate(${d.x},${d.y})`);
-      });
-    }
-  </script>
+  const maxCentrality = d3.max(graph.nodes, d => d.centrality);
+  const maxPointSize = +maxPointSizeSlider.value;
+
+  const sizeScale = d3.scaleLinear()
+    .domain([0, maxCentrality])
+    .range([5, maxPointSize]);
+
+  // GeoJSONのx,y座標を画面内にスケーリング
+  const xs = graph.nodes.map(d => d.x);
+  const ys = graph.nodes.map(d => d.y);
+
+  const xScale = d3.scaleLinear()
+    .domain([d3.min(xs), d3.max(xs)])
+    .range([40, width - 40]);
+
+  const yScale = d3.scaleLinear()
+    .domain([d3.min(ys), d3.max(ys)])
+    .range([height - 40, 40]); // y軸反転
+
+  const distributionGroup = distributionSvg.append("g");
+
+  distributionSvg.call(d3.zoom()
+    .scaleExtent([0.5, 10])
+    .on("zoom", (event) => {
+      distributionGroup.attr("transform", event.transform);
+    })
+  );
+
+  distributionGroup.selectAll("circle")
+    .data(graph.nodes)
+    .join("circle")
+    .attr("cx", d => xScale(d.x))
+    .attr("cy", d => yScale(d.y))
+    .attr("r", d => sizeScale(d.centrality))
+    .attr("fill", d => d.centrality === maxCentrality ? "red" : "steelblue")  // ←ここを変更
+    .attr("stroke", "#fff")
+    .attr("stroke-width", 1.5);
+}
+
+</script>
 </body>
 </html>
