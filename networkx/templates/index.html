@@ -30,10 +30,9 @@
       display: inline-block;
       margin: 10px 0 5px;
     }
-    .inline-input {
-      display: flex;
-      align-items: center;
-      gap: 10px;
+    .highlight {
+      stroke: orange;
+      stroke-width: 2;
     }
   </style>
 </head>
@@ -51,11 +50,9 @@
   </select>
   <br />
 
-  <div class="inline-input">
-    <label for="distanceThreshold">距離の閾値:</label>
-    <input type="range" id="distanceThreshold" min="0" step="0.1" value="0" />
-    <input type="number" id="distanceInput" min="0" step="0.1" value="0" style="width: 80px;" />
-  </div>
+  <label for="distanceThreshold">距離の閾値:</label>
+  <input type="range" id="distanceThreshold" min="0" step="0.1" value="0" />
+  <input type="number" id="distanceInput" min="0" step="0.1" value="0" style="width: 80px;" />
   <br />
 
   <div id="error"></div>
@@ -68,8 +65,6 @@
 
     <div class="chart-wrapper">
       <h2>GeoJSON 分布図</h2>
-      <label for="maxPointSize">分布図 最大点サイズ: <span id="maxSizeValue">25</span></label>
-      <input type="range" id="maxPointSize" min="5" max="100" value="25" />
       <svg id="distributionSvg" width="800" height="600"></svg>
     </div>
   </div>
@@ -79,13 +74,15 @@
     const distributionSvg = d3.select("#distributionSvg");
     const errorDiv = document.getElementById("error");
     const centralitySelect = document.getElementById("centralityType");
-    const maxPointSizeSlider = document.getElementById("maxPointSize");
-    const maxSizeValueSpan = document.getElementById("maxSizeValue");
 
     const distanceSlider = document.getElementById("distanceThreshold");
     const distanceInput = document.getElementById("distanceInput");
 
     let currentGraph = null;
+    let highlightedNodeId = null; // ハイライトされているノードID
+    let geoJsonNodes = [];  // GeoJSONのノードデータを保持
+    let init_crd = [];  // 初期座標を保持（黒点の座標）
+    let blackCirclesGroup = null; // 黒点を格納するグループ
 
     document.getElementById("fileInput").addEventListener("change", function () {
       const file = this.files[0];
@@ -107,6 +104,15 @@
         })
         .then(graph => {
           currentGraph = graph;
+          geoJsonNodes = graph.nodes; // GeoJSONのノードデータを保存
+
+          // init_crd にGeoJSONの座標情報を格納
+          init_crd = geoJsonNodes.map(node => ({
+            id: node.id,
+            x: node.x,
+            y: node.y
+          }));
+
           drawGraph(graph);
           drawDistribution(graph);
 
@@ -126,21 +132,12 @@
       updateGraphByDistance();
     });
 
-    maxPointSizeSlider.addEventListener("input", () => {
-      maxSizeValueSpan.textContent = maxPointSizeSlider.value;
-      if (currentGraph) {
-        drawDistribution(currentGraph);
-      }
-    });
-
-    // スライダー変更時、テキストボックスも更新してグラフ再描画
     distanceSlider.addEventListener("input", () => {
       const val = parseFloat(distanceSlider.value);
       distanceInput.value = val.toFixed(2);
       updateGraphByDistance();
     });
 
-    // テキスト入力時、スライダーも連動させてグラフ再描画
     distanceInput.addEventListener("input", () => {
       let val = parseFloat(distanceInput.value);
       const maxVal = parseFloat(distanceSlider.max);
@@ -212,14 +209,6 @@
         .join("line")
         .attr("stroke-width", 2);
 
-      const edgeLabels = container.append("g")
-        .selectAll("text")
-        .data(graph.links)
-        .join("text")
-        .attr("font-size", "10px")
-        .attr("fill", "#000")
-        .attr("text-anchor", "middle");
-
       const nodeGroup = container.append("g")
         .selectAll("g")
         .data(graph.nodes)
@@ -245,15 +234,21 @@
         .attr("r", d => sizeScale(d.centrality))
         .attr("fill", d => d.centrality === maxCentrality ? "red" : "steelblue")
         .attr("stroke", "#fff")
-        .attr("stroke-width", 1.5);
+        .attr("stroke-width", 1.5)
+        .on("click", (event, d) => {
+          highlightedNodeId = d.id;
+          highlightCorrespondingPoint(d.id);  // 分布図のハイライト
+          highlightGraphNode(d.id);  // ネットワークグラフのハイライト
+        });
 
       nodeGroup.append("text")
         .text(d => d.id)
         .attr("x", 0)
-        .attr("y", d => -sizeScale(d.centrality) - 5)
+        .attr("y", 0)
+        .attr("dy", -10)
         .attr("text-anchor", "middle")
-        .attr("font-size", "12px")
-        .attr("fill", "#333");
+        .attr("font-size", "10px")
+        .attr("fill", "#000");
 
       simulation.on("tick", () => {
         link
@@ -262,75 +257,90 @@
           .attr("x2", d => d.target.x)
           .attr("y2", d => d.target.y);
 
-        edgeLabels
-          .attr("x", d => (d.source.x + d.target.x) / 2)
-          .attr("y", d => (d.source.y + d.target.y) / 2)
-          .text(d => d.distance.toFixed(2));
-
-        nodeGroup.attr("transform", d => `translate(${d.x},${d.y})`);
+        nodeGroup
+          .attr("transform", d => `translate(${d.x}, ${d.y})`);
       });
     }
 
     function drawDistribution(graph) {
-  distributionSvg.selectAll("*").remove();
+      distributionSvg.selectAll("*").remove();
 
-  const width = +distributionSvg.attr("width");
-  const height = +distributionSvg.attr("height");
+      const width = +distributionSvg.attr("width");
+      const height = +distributionSvg.attr("height");
 
-  const maxCentrality = d3.max(graph.nodes, d => d.centrality);
-  const maxPointSize = +maxPointSizeSlider.value;
+      const xExtent = d3.extent(graph.nodes, d => d.x);
+      const yExtent = d3.extent(graph.nodes, d => d.y);
 
-  const sizeScale = d3.scaleLinear()
-    .domain([0, maxCentrality])
-    .range([5, maxPointSize]);
+      const padding = 20; // 境界のパディング
 
-  const xs = graph.nodes.map(d => d.x);
-  const ys = graph.nodes.map(d => d.y);
+      const xScale = d3.scaleLinear()
+        .domain([xExtent[0] - padding, xExtent[1] + padding])
+        .range([0, width]);
 
-  const xScale = d3.scaleLinear()
-    .domain([d3.min(xs), d3.max(xs)])
-    .range([40, width - 40]);
+      const yScale = d3.scaleLinear()
+        .domain([yExtent[0] - padding, yExtent[1] + padding])
+        .range([height, 0]);
 
-  const yScale = d3.scaleLinear()
-    .domain([d3.min(ys), d3.max(ys)])
-    .range([height - 40, 40]); // y軸反転
+      const pointSize = 5;
 
-  const distributionGroup = distributionSvg.append("g");
+      const nodeGroup = distributionSvg.append("g");
 
-  distributionSvg.call(d3.zoom()
-    .scaleExtent([0.5, 10])
-    .on("zoom", (event) => {
-      distributionGroup.attr("transform", event.transform);
-    })
-  );
+      // ズーム機能
+      distributionSvg.call(d3.zoom()
+        .scaleExtent([0.5, 10])
+        .on("zoom", (event) => {
+          nodeGroup.attr("transform", event.transform);
+        })
+      );
 
-  // ノードを中心性で分けて描画順を制御
-  const normalNodes = graph.nodes.filter(d => d.centrality !== maxCentrality);
-  const maxNodes = graph.nodes.filter(d => d.centrality === maxCentrality);
+      // 背景の黒色点（GeoJSONデータから常に描画）
+      if (!blackCirclesGroup) {
+        blackCirclesGroup = nodeGroup.append("g"); // 黒点用のグループを作成
+      }
 
-  distributionGroup.selectAll("circle.normal")
-    .data(normalNodes)
-    .join("circle")
-    .attr("class", "normal")
-    .attr("cx", d => xScale(d.x))
-    .attr("cy", d => yScale(d.y))
-    .attr("r", d => sizeScale(d.centrality))
-    .attr("fill", "steelblue")
-    .attr("stroke", "#fff")
-    .attr("stroke-width", 1.5);
+      blackCirclesGroup.selectAll("circle.background")
+        .data(init_crd) // 初期座標（init_crd）を使用
+        .join("circle")
+        .attr("class", "background")
+        .attr("cx", d => xScale(d.x))
+        .attr("cy", d => yScale(d.y))
+        .attr("r", pointSize)
+        .attr("fill", "black")
+        .attr("stroke", "#fff")
+        .attr("stroke-width", 1);
 
-  distributionGroup.selectAll("circle.max")
-    .data(maxNodes)
-    .join("circle")
-    .attr("class", "max")
-    .attr("cx", d => xScale(d.x))
-    .attr("cy", d => yScale(d.y))
-    .attr("r", d => sizeScale(d.centrality))
-    .attr("fill", "red")
-    .attr("stroke", "#fff")
-    .attr("stroke-width", 1.5);
-}
+      // 青色点と赤色点を描画
+      nodeGroup.selectAll("circle.foreground")
+        .data(graph.nodes)
+        .join("circle")
+        .attr("class", "foreground")
+        .attr("cx", d => xScale(d.x))
+        .attr("cy", d => yScale(d.y))
+        .attr("r", pointSize)
+        .attr("fill", d => d.centrality === d3.max(graph.nodes, node => node.centrality) ? "red" : "blue")
+        .attr("stroke", "#fff")
+        .attr("stroke-width", 1);
+    }
 
+    function highlightCorrespondingPoint(nodeId) {
+      distributionSvg.selectAll("circle")
+        .attr("fill", d => d.centrality === d3.max(currentGraph.nodes, node => node.centrality) ? "red" : "blue");
+
+      distributionSvg.selectAll("circle")
+        .filter(d => d.id === nodeId)
+        .attr("fill", "orange")
+        .attr("stroke", "orange");
+    }
+
+    function highlightGraphNode(nodeId) {
+      graphSvg.selectAll("circle")
+        .attr("fill", d => d.centrality === d3.max(currentGraph.nodes, node => node.centrality) ? "red" : "steelblue");
+
+      graphSvg.selectAll("circle")
+        .filter(d => d.id === nodeId)
+        .attr("fill", "orange")
+        .attr("stroke", "orange");
+    }
   </script>
 </body>
 </html>
