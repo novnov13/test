@@ -20,7 +20,7 @@
 </head>
 <body>
   <h1>NetworkX グラフ可視化</h1>
-  <p>CSVエッジリスト（node1,node2,distance）をアップロードしてください。</p>
+  <p>GeoJSON ファイルをアップロードしてください。</p>
 
   <input type="file" id="fileInput" />
   <label for="centralityType">中心性:</label>
@@ -49,7 +49,7 @@
       formData.append("file", file);
       formData.append("centrality", centrality);
 
-      fetch("/upload", {
+      fetch("/upload_geojson", {
         method: "POST",
         body: formData,
       })
@@ -72,130 +72,101 @@
       }
     });
 
- function drawGraph(graph) {
-  errorDiv.textContent = "";
-  svg.selectAll("*").remove();
+    function drawGraph(graph) {
+      errorDiv.textContent = "";
+      svg.selectAll("*").remove();
 
-  const width = +svg.attr("width");
-  const height = +svg.attr("height");
-  const centralityType = centralitySelect.value;
+      const width = +svg.attr("width");
+      const height = +svg.attr("height");
+      const centralityType = centralitySelect.value;
 
-  const maxCentrality = d3.max(graph.nodes, d => d.centrality[centralityType]);
+      const maxCentrality = d3.max(graph.nodes, d => d.centrality[centralityType]);
 
-  const sizeScale = d3.scaleLinear()
-    .domain(d3.extent(graph.nodes, d => d.centrality[centralityType]))
-    .range([5, 25]);
+      const sizeScale = d3.scaleLinear()
+        .domain(d3.extent(graph.nodes, d => d.centrality[centralityType]))
+        .range([5, 25]);
 
-  // ✅ ズーム用グループ
-  const container = svg.append("g");
+      const simulation = d3.forceSimulation(graph.nodes)
+        .force("link", d3.forceLink(graph.links).id(d => d.id).distance(100))
+        .force("charge", d3.forceManyBody().strength(-200))
+        .force("center", d3.forceCenter(width / 2, height / 2));
 
-  // ✅ ズームイベント登録
-  svg.call(
-    d3.zoom()
-      .scaleExtent([0.1, 5])
-      .on("zoom", (event) => {
-        container.attr("transform", event.transform);
-      })
-  );
+      const container = svg.append("g");
 
-  const simulation = d3.forceSimulation(graph.nodes)
-    .force("link", d3.forceLink(graph.links).id(d => d.id).distance(100))
-    .force("charge", d3.forceManyBody().strength(-200))
-    .force("center", d3.forceCenter(width / 2, height / 2));
+      svg.call(d3.zoom()
+        .scaleExtent([0.1, 5])
+        .on("zoom", (event) => {
+          container.attr("transform", event.transform);
+        })
+      );
 
-  const link = container.append("g")
-    .attr("stroke", "#aaa")
-    .selectAll("line")
-    .data(graph.links)
-    .join("line")
-    .attr("stroke-width", 2);
+      const link = container.append("g")
+        .attr("stroke", "#aaa")
+        .selectAll("line")
+        .data(graph.links)
+        .join("line")
+        .attr("stroke-width", 2);
 
-  const edgeLabels = container.append("g")
-    .selectAll("text")
-    .data(graph.links)
-    .join("text")
-    .attr("font-size", "10px")
-    .attr("fill", "#333")
-    .attr("text-anchor", "middle")
-    .text(d => parseFloat(d.distance).toFixed(2));
+      const edgeLabels = container.append("g")
+        .selectAll("text")
+        .data(graph.links)
+        .join("text")
+        .attr("font-size", "10px")
+        .attr("fill", "#333")
+        .attr("text-anchor", "middle")
+        .text(d => parseFloat(d.distance).toFixed(2));
 
-  const nodeGroup = container.append("g")
-    .selectAll("g")
-    .data(graph.nodes)
-    .join("g")
-    .call(drag(simulation));
+      const nodeGroup = container.append("g")
+        .selectAll("g")
+        .data(graph.nodes)
+        .join("g")
+        .call(d3.drag()
+          .on("start", (event, d) => {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+          })
+          .on("drag", (event, d) => {
+            d.fx = event.x;
+            d.fy = event.y;
+          })
+          .on("end", (event, d) => {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+          })
+        );
 
-  nodeGroup.append("circle")
-    .attr("r", d => sizeScale(d.centrality[centralityType]))
-    .attr("fill", d =>
-      d.centrality[centralityType] === maxCentrality ? "red" : "steelblue"
-    )
-    .attr("stroke", "#fff")
-    .attr("stroke-width", 1.5);
+      nodeGroup.append("circle")
+        .attr("r", d => sizeScale(d.centrality[centralityType]))
+        .attr("fill", d =>
+          d.centrality[centralityType] === maxCentrality ? "red" : "steelblue"
+        )
+        .attr("stroke", "#fff")
+        .attr("stroke-width", 1.5);
 
-  nodeGroup.append("text")
-    .text(d => d.id)
-    .attr("x", 0)
-    .attr("y", d => -sizeScale(d.centrality[centralityType]) - 5)
-    .attr("text-anchor", "middle")
-    .attr("font-size", "12px")
-    .attr("fill", "#333");
+      nodeGroup.append("text")
+        .text(d => d.id)
+        .attr("x", 0)
+        .attr("y", d => -sizeScale(d.centrality[centralityType]) - 5)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "12px")
+        .attr("fill", "#333");
 
-  nodeGroup.append("title")
-    .text(d => `${d.id}\n${centralityType}: ${d.centrality[centralityType].toFixed(3)}`);
+      simulation.on("tick", () => {
+        link
+          .attr("x1", d => d.source.x)
+          .attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x)
+          .attr("y2", d => d.target.y);
 
-  simulation.on("tick", () => {
-    link
-      .attr("x1", d => d.source.x)
-      .attr("y1", d => d.source.y)
-      .attr("x2", d => d.target.x)
-      .attr("y2", d => d.target.y);
+        edgeLabels
+          .attr("x", d => (d.source.x + d.target.x) / 2)
+          .attr("y", d => (d.source.y + d.target.y) / 2);
 
-    edgeLabels
-      .attr("x", d => (d.source.x + d.target.x) / 2)
-      .attr("y", d => (d.source.y + d.target.y) / 2);
-
-    nodeGroup.attr("transform", d => `translate(${d.x},${d.y})`);
-  });
-
-  function drag(simulation) {
-    return d3.drag()
-      .on("start", (event, d) => {
-        if (!event.active) simulation.alphaTarget(0.3).restart();
-        d.fx = d.x;
-        d.fy = d.y;
-      })
-      .on("drag", (event, d) => {
-        d.fx = event.x;
-        d.fy = event.y;
-      })
-      .on("end", (event, d) => {
-        if (!event.active) simulation.alphaTarget(0);
-        d.fx = null;
-        d.fy = null;
+        nodeGroup.attr("transform", d => `translate(${d.x},${d.y})`);
       });
-  }
-}
-
-function drag(simulation) {
-  return d3.drag()
-    .on("start", (event, d) => {
-      if (!event.active) simulation.alphaTarget(0.3).restart();
-      d.fx = d.x;
-      d.fy = d.y;
-    })
-    .on("drag", (event, d) => {
-      d.fx = event.x;
-      d.fy = event.y;
-    })
-    .on("end", (event, d) => {
-      if (!event.active) simulation.alphaTarget(0);
-      d.fx = null;
-      d.fy = null;
-    });
-}
-
-
+    }
   </script>
 </body>
 </html>
