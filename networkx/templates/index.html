@@ -30,6 +30,11 @@
       display: inline-block;
       margin: 10px 0 5px;
     }
+    .inline-input {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
   </style>
 </head>
 <body>
@@ -46,8 +51,11 @@
   </select>
   <br />
 
-  <label for="distanceThreshold">距離の閾値: <span id="distanceValue">--</span></label>
-  <input type="range" id="distanceThreshold" min="0" step="0.1" value="0" />
+  <div class="inline-input">
+    <label for="distanceThreshold">距離の閾値:</label>
+    <input type="range" id="distanceThreshold" min="0" step="0.1" value="0" />
+    <input type="number" id="distanceInput" min="0" step="0.1" value="0" style="width: 80px;" />
+  </div>
   <br />
 
   <div id="error"></div>
@@ -75,7 +83,7 @@
     const maxSizeValueSpan = document.getElementById("maxSizeValue");
 
     const distanceSlider = document.getElementById("distanceThreshold");
-    const distanceValue = document.getElementById("distanceValue");
+    const distanceInput = document.getElementById("distanceInput");
 
     let currentGraph = null;
 
@@ -102,11 +110,12 @@
           drawGraph(graph);
           drawDistribution(graph);
 
-          // 距離スライダーの設定
+          // 距離スライダーとテキスト入力の最大値設定
           const maxDist = graph.max_distance;
           distanceSlider.max = maxDist;
           distanceSlider.value = maxDist;
-          distanceValue.textContent = maxDist.toFixed(2);
+          distanceInput.max = maxDist;
+          distanceInput.value = maxDist;
         })
         .catch(err => {
           errorDiv.textContent = "エラー: " + err.message;
@@ -124,8 +133,23 @@
       }
     });
 
+    // スライダー変更時、テキストボックスも更新してグラフ再描画
     distanceSlider.addEventListener("input", () => {
-      distanceValue.textContent = parseFloat(distanceSlider.value).toFixed(2);
+      const val = parseFloat(distanceSlider.value);
+      distanceInput.value = val.toFixed(2);
+      updateGraphByDistance();
+    });
+
+    // テキスト入力時、スライダーも連動させてグラフ再描画
+    distanceInput.addEventListener("input", () => {
+      let val = parseFloat(distanceInput.value);
+      const maxVal = parseFloat(distanceSlider.max);
+
+      if (isNaN(val)) return;
+      if (val < 0) val = 0;
+      if (val > maxVal) val = maxVal;
+
+      distanceSlider.value = val;
       updateGraphByDistance();
     });
 
@@ -160,7 +184,6 @@
 
       const width = +graphSvg.attr("width");
       const height = +graphSvg.attr("height");
-      const centralityType = centralitySelect.value;
 
       const maxCentrality = d3.max(graph.nodes, d => d.centrality);
 
@@ -249,48 +272,65 @@
     }
 
     function drawDistribution(graph) {
-      distributionSvg.selectAll("*").remove();
+  distributionSvg.selectAll("*").remove();
 
-      const width = +distributionSvg.attr("width");
-      const height = +distributionSvg.attr("height");
+  const width = +distributionSvg.attr("width");
+  const height = +distributionSvg.attr("height");
 
-      const maxCentrality = d3.max(graph.nodes, d => d.centrality);
-      const maxPointSize = +maxPointSizeSlider.value;
+  const maxCentrality = d3.max(graph.nodes, d => d.centrality);
+  const maxPointSize = +maxPointSizeSlider.value;
 
-      const sizeScale = d3.scaleLinear()
-        .domain([0, maxCentrality])
-        .range([5, maxPointSize]);
+  const sizeScale = d3.scaleLinear()
+    .domain([0, maxCentrality])
+    .range([5, maxPointSize]);
 
-      const xs = graph.nodes.map(d => d.x);
-      const ys = graph.nodes.map(d => d.y);
+  const xs = graph.nodes.map(d => d.x);
+  const ys = graph.nodes.map(d => d.y);
 
-      const xScale = d3.scaleLinear()
-        .domain([d3.min(xs), d3.max(xs)])
-        .range([40, width - 40]);
+  const xScale = d3.scaleLinear()
+    .domain([d3.min(xs), d3.max(xs)])
+    .range([40, width - 40]);
 
-      const yScale = d3.scaleLinear()
-        .domain([d3.min(ys), d3.max(ys)])
-        .range([height - 40, 40]);
+  const yScale = d3.scaleLinear()
+    .domain([d3.min(ys), d3.max(ys)])
+    .range([height - 40, 40]); // y軸反転
 
-      const distributionGroup = distributionSvg.append("g");
+  const distributionGroup = distributionSvg.append("g");
 
-      distributionSvg.call(d3.zoom()
-        .scaleExtent([0.5, 10])
-        .on("zoom", (event) => {
-          distributionGroup.attr("transform", event.transform);
-        })
-      );
+  distributionSvg.call(d3.zoom()
+    .scaleExtent([0.5, 10])
+    .on("zoom", (event) => {
+      distributionGroup.attr("transform", event.transform);
+    })
+  );
 
-      distributionGroup.selectAll("circle")
-        .data(graph.nodes)
-        .join("circle")
-        .attr("cx", d => xScale(d.x))
-        .attr("cy", d => yScale(d.y))
-        .attr("r", d => sizeScale(d.centrality))
-        .attr("fill", d => d.centrality === maxCentrality ? "red" : "steelblue")
-        .attr("stroke", "#fff")
-        .attr("stroke-width", 1.5);
-    }
+  // ノードを中心性で分けて描画順を制御
+  const normalNodes = graph.nodes.filter(d => d.centrality !== maxCentrality);
+  const maxNodes = graph.nodes.filter(d => d.centrality === maxCentrality);
+
+  distributionGroup.selectAll("circle.normal")
+    .data(normalNodes)
+    .join("circle")
+    .attr("class", "normal")
+    .attr("cx", d => xScale(d.x))
+    .attr("cy", d => yScale(d.y))
+    .attr("r", d => sizeScale(d.centrality))
+    .attr("fill", "steelblue")
+    .attr("stroke", "#fff")
+    .attr("stroke-width", 1.5);
+
+  distributionGroup.selectAll("circle.max")
+    .data(maxNodes)
+    .join("circle")
+    .attr("class", "max")
+    .attr("cx", d => xScale(d.x))
+    .attr("cy", d => yScale(d.y))
+    .attr("r", d => sizeScale(d.centrality))
+    .attr("fill", "red")
+    .attr("stroke", "#fff")
+    .attr("stroke-width", 1.5);
+}
+
   </script>
 </body>
 </html>
