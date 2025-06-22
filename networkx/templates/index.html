@@ -34,6 +34,19 @@
       stroke: orange;
       stroke-width: 2;
     }
+    table {
+      width: 100%;
+      margin-top: 20px;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 8px;
+      text-align: left;
+      border: 1px solid #ddd;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
   </style>
 </head>
 <body>
@@ -47,6 +60,7 @@
   <select id="centralityType">
     <option value="degree">次数中心性</option>
     <option value="closeness">近接中心性</option>
+    <option value="betweenness">媒介中心性</option>
   </select>
   <br />
 
@@ -69,20 +83,34 @@
     </div>
   </div>
 
+  <div>
+    <h3>中心性トップテン</h3>
+    <table id="centralityTable">
+      <thead>
+        <tr>
+          <th>順位</th>
+          <th>ノードID</th>
+          <th>中心性</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
   <script>
     const graphSvg = d3.select("#graphSvg");
     const distributionSvg = d3.select("#distributionSvg");
     const errorDiv = document.getElementById("error");
     const centralitySelect = document.getElementById("centralityType");
-
     const distanceSlider = document.getElementById("distanceThreshold");
     const distanceInput = document.getElementById("distanceInput");
 
     let currentGraph = null;
-    let highlightedNodeId = null; // ハイライトされているノードID
-    let geoJsonNodes = [];  // GeoJSONのノードデータを保持
-    let init_crd = [];  // 初期座標を保持（黒点の座標）
-    let blackCirclesGroup = null; // 黒点を格納するグループ
+    let highlightedNodeId = null;
+    let geoJsonNodes = [];
+    let init_crd = [];
+    let blackCirclesGroup = null;
+    let zoom = null;
 
     document.getElementById("fileInput").addEventListener("change", function () {
       const file = this.files[0];
@@ -98,25 +126,16 @@
         method: "POST",
         body: formData,
       })
-        .then(res => {
-          if (!res.ok) throw new Error("アップロード失敗");
-          return res.json();
-        })
+        .then(res => res.json())
         .then(graph => {
           currentGraph = graph;
-          geoJsonNodes = graph.nodes; // GeoJSONのノードデータを保存
-
-          // init_crd にGeoJSONの座標情報を格納
-          init_crd = geoJsonNodes.map(node => ({
-            id: node.id,
-            x: node.x,
-            y: node.y
-          }));
+          geoJsonNodes = graph.nodes;
+          init_crd = geoJsonNodes.map(node => ({ id: node.id, x: node.x, y: node.y }));
 
           drawGraph(graph);
           drawDistribution(graph);
+          updateCentralityTable(graph);
 
-          // 距離スライダーとテキスト入力の最大値設定
           const maxDist = graph.max_distance;
           distanceSlider.max = maxDist;
           distanceSlider.value = maxDist;
@@ -130,27 +149,31 @@
 
     centralitySelect.addEventListener("change", () => {
       updateGraphByDistance();
+      updateCentralityTable(currentGraph);
+      resetZoom();  // スライダー操作確定後に全体表示へズームリセット
     });
 
-    distanceSlider.addEventListener("input", () => {
-      const val = parseFloat(distanceSlider.value);
-      distanceInput.value = val.toFixed(2);
-      updateGraphByDistance();
+    distanceSlider.addEventListener("change", () => {
+        let valsl =  parseFloat(distanceSlider.value);
+        updateGraphByDistance();
+        distanceInput.value = valsl;
+        resetZoom();  // スライダー操作確定後に全体表示へズームリセット
     });
+
 
     distanceInput.addEventListener("input", () => {
       let val = parseFloat(distanceInput.value);
       const maxVal = parseFloat(distanceSlider.max);
-
       if (isNaN(val)) return;
       if (val < 0) val = 0;
       if (val > maxVal) val = maxVal;
-
       distanceSlider.value = val;
       updateGraphByDistance();
+      resetZoom();  // スライダー操作確定後に全体表示へズームリセット
     });
 
     function updateGraphByDistance() {
+      
       if (!currentGraph) return;
 
       const threshold = parseFloat(distanceSlider.value);
@@ -169,13 +192,16 @@
           currentGraph = graph;
           drawGraph(graph);
           drawDistribution(graph);
+          updateCentralityTable(graph);
         })
         .catch(err => {
           errorDiv.textContent = "エラー: " + err.message;
         });
+        resetZoom();  // スライダー操作確定後に全体表示へズームリセット
     }
 
     function drawGraph(graph) {
+    
       errorDiv.textContent = "";
       graphSvg.selectAll("*").remove();
 
@@ -183,10 +209,8 @@
       const height = +graphSvg.attr("height");
 
       const maxCentrality = d3.max(graph.nodes, d => d.centrality);
-
-      const sizeScale = d3.scaleLinear()
-        .domain([0, maxCentrality])
-        .range([5, 25]);
+      // サイズスケールは不要に（固定サイズにするため）
+      // const sizeScale = d3.scaleLinear().domain([0, maxCentrality]).range([5, 25]);
 
       const simulation = d3.forceSimulation(graph.nodes)
         .force("link", d3.forceLink(graph.links).id(d => d.id).distance(100))
@@ -195,12 +219,27 @@
 
       const container = graphSvg.append("g");
 
-      graphSvg.call(d3.zoom()
+      zoom = d3.zoom()
         .scaleExtent([0.1, 5])
         .on("zoom", (event) => {
-          container.attr("transform", event.transform);
-        })
-      );
+          const transform = event.transform;
+          container.attr("transform", transform);
+
+          const k = transform.k;
+
+          // ノードの半径を拡大縮小に反比例で調整（固定に見せる）
+          container.selectAll("circle")
+            .attr("r", 8 / k);
+
+          // エッジの線幅も反比例で調整
+          container.selectAll("line")
+            .attr("stroke-width", 2 / k);
+
+          container.selectAll("text")
+            .attr("font-size", 10 / k + "px");
+        });
+
+      graphSvg.call(zoom);
 
       const link = container.append("g")
         .attr("stroke", "#aaa")
@@ -210,9 +249,10 @@
         .attr("stroke-width", 2);
 
       const nodeGroup = container.append("g")
-        .selectAll("g")
+        .selectAll(".node")
         .data(graph.nodes)
         .join("g")
+        .attr("class", "node")
         .call(d3.drag()
           .on("start", (event, d) => {
             if (!event.active) simulation.alphaTarget(0.3).restart();
@@ -231,14 +271,14 @@
         );
 
       nodeGroup.append("circle")
-        .attr("r", d => sizeScale(d.centrality))
+        .attr("r", 8)  // 初期半径は8（ズーム時に変わる）
         .attr("fill", d => d.centrality === maxCentrality ? "red" : "steelblue")
         .attr("stroke", "#fff")
         .attr("stroke-width", 1.5)
         .on("click", (event, d) => {
           highlightedNodeId = d.id;
-          highlightCorrespondingPoint(d.id);  // 分布図のハイライト
-          highlightGraphNode(d.id);  // ネットワークグラフのハイライト
+          highlightCorrespondingPoint(d.id);
+          highlightGraphNode(d.id);
         });
 
       nodeGroup.append("text")
@@ -256,11 +296,68 @@
           .attr("y1", d => d.source.y)
           .attr("x2", d => d.target.x)
           .attr("y2", d => d.target.y);
-
-        nodeGroup
-          .attr("transform", d => `translate(${d.x}, ${d.y})`);
+        nodeGroup.attr("transform", d => `translate(${d.x}, ${d.y})`);
       });
+    
+      // リセットボタン追加
+      const buttonGroup = graphSvg.append("g")
+        .attr("transform", "translate(700, 20)")
+        .style("cursor", "pointer")
+        .on("click", resetZoom);
+
+      buttonGroup.append("rect")
+        .attr("x", 0)
+        .attr("y", 0)
+        .attr("width", 80)
+        .attr("height", 30)
+        .attr("rx", 5)
+        .attr("ry", 5)
+        .attr("fill", "#eee")
+        .attr("stroke", "#999");
+
+      buttonGroup.append("text")
+        .attr("x", 40)
+        .attr("y", 20)
+        .attr("text-anchor", "middle")
+        .attr("dominant-baseline", "middle")
+        .attr("font-size", "12px")
+        .attr("fill", "#333")
+        .text("全体表示");
+         resetZoom();  // スライダー操作確定後に全体表示へズームリセット
     }
+
+    function resetZoom() {
+      const width = +graphSvg.attr("width");
+      const height = +graphSvg.attr("height");
+
+      const nodes = currentGraph.nodes;
+
+      const xExtent = d3.extent(nodes, d => d.x);
+      const yExtent = d3.extent(nodes, d => d.y);
+
+      const padding = 40;
+
+      const xRange = xExtent[1] - xExtent[0];
+      const yRange = yExtent[1] - yExtent[0];
+
+      const scale = Math.min(
+        (width - padding * 2) / xRange,
+        (height - padding * 2) / yRange
+      );
+
+      const translateX = (width) / 2;
+      const translateY = (height) / 2;
+
+      const transform = d3.zoomIdentity
+        .translate(translateX, translateY)
+        .scale(scale);
+
+      graphSvg.transition()
+        .duration(750)
+        .call(zoom.transform, transform);
+    }
+
+    // --- 以下、元のコードを維持 ---
 
     function drawDistribution(graph) {
       distributionSvg.selectAll("*").remove();
@@ -271,35 +368,25 @@
       const xExtent = d3.extent(graph.nodes, d => d.x);
       const yExtent = d3.extent(graph.nodes, d => d.y);
 
-      const padding = 20; // 境界のパディング
-
-      const xScale = d3.scaleLinear()
-        .domain([xExtent[0] - padding, xExtent[1] + padding])
-        .range([0, width]);
-
-      const yScale = d3.scaleLinear()
-        .domain([yExtent[0] - padding, yExtent[1] + padding])
-        .range([height, 0]);
+      const padding = 20;
+      const xScale = d3.scaleLinear().domain([xExtent[0] - padding, xExtent[1] + padding]).range([0, width]);
+      const yScale = d3.scaleLinear().domain([yExtent[0] - padding, yExtent[1] + padding]).range([height, 0]);
 
       const pointSize = 5;
-
       const nodeGroup = distributionSvg.append("g");
 
-      // ズーム機能
       distributionSvg.call(d3.zoom()
-        .scaleExtent([0.5, 10])
+        .scaleExtent([0.001, 1000])
         .on("zoom", (event) => {
           nodeGroup.attr("transform", event.transform);
-        })
-      );
+        }));
 
-      // 背景の黒色点（GeoJSONデータから常に描画）
       if (!blackCirclesGroup) {
-        blackCirclesGroup = nodeGroup.append("g"); // 黒点用のグループを作成
+        blackCirclesGroup = nodeGroup.append("g");
       }
 
       blackCirclesGroup.selectAll("circle.background")
-        .data(init_crd) // 初期座標（init_crd）を使用
+        .data(init_crd)
         .join("circle")
         .attr("class", "background")
         .attr("cx", d => xScale(d.x))
@@ -309,37 +396,53 @@
         .attr("stroke", "#fff")
         .attr("stroke-width", 1);
 
-      // 青色点と赤色点を描画
-      nodeGroup.selectAll("circle.foreground")
+      const circles = nodeGroup.selectAll("circle.highlighted")
         .data(graph.nodes)
         .join("circle")
-        .attr("class", "foreground")
+        .attr("class", "highlighted")
         .attr("cx", d => xScale(d.x))
         .attr("cy", d => yScale(d.y))
         .attr("r", pointSize)
-        .attr("fill", d => d.centrality === d3.max(graph.nodes, node => node.centrality) ? "red" : "blue")
+        .attr("fill", d => d.centrality === d3.max(graph.nodes, node => node.centrality) ? "red" : "steelblue")
         .attr("stroke", "#fff")
-        .attr("stroke-width", 1);
+        .attr("stroke-width", 1.5)
+        .on("click", (event, d) => {
+          highlightedNodeId = d.id;
+          highlightGraphNode(d.id);
+          highlightCorrespondingPoint(d.id);
+        });
     }
 
     function highlightCorrespondingPoint(nodeId) {
-      distributionSvg.selectAll("circle")
-        .attr("fill", d => d.centrality === d3.max(currentGraph.nodes, node => node.centrality) ? "red" : "blue");
-
-      distributionSvg.selectAll("circle")
-        .filter(d => d.id === nodeId)
-        .attr("fill", "orange")
-        .attr("stroke", "orange");
+      distributionSvg.selectAll("circle.highlighted")
+        .attr("stroke", d => d.id === nodeId ? "orange" : "#fff")
+        .attr("stroke-width", d => d.id === nodeId ? 3 : 1.5);
     }
 
     function highlightGraphNode(nodeId) {
-      graphSvg.selectAll("circle")
-        .attr("fill", d => d.centrality === d3.max(currentGraph.nodes, node => node.centrality) ? "red" : "steelblue");
+      graphSvg.selectAll("g.node circle")
+        .attr("stroke", d => d.id === nodeId ? "orange" : "#fff")
+        .attr("stroke-width", d => d.id === nodeId ? 3 : 1.5);
+    }
 
-      graphSvg.selectAll("circle")
-        .filter(d => d.id === nodeId)
-        .attr("fill", "orange")
-        .attr("stroke", "orange");
+    function updateCentralityTable(graph) {
+      if (!graph || !graph.nodes) return;
+
+      const tbody = document.querySelector("#centralityTable tbody");
+      tbody.innerHTML = "";
+
+      const sorted = graph.nodes.slice().sort((a, b) => b.centrality - a.centrality);
+      const top10 = sorted.slice(0, 10);
+
+      top10.forEach((node, i) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${i + 1}</td>
+          <td>${node.id}</td>
+          <td>${node.centrality.toFixed(4)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
     }
   </script>
 </body>
