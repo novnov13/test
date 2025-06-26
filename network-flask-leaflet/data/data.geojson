@@ -1,0 +1,155 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "link_001",
+        "timestamp": "2023-01-15",
+        "info": "Route Hanoi–Ho Chi Minh City"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [105.85, 21.03],
+          [106.7, 10.78]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "link_002",
+        "timestamp": "2023-03-22",
+        "info": "Route Ho Chi Minh City–Da Nang"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [106.7, 10.78],
+          [108.2, 16.05]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "link_003",
+        "timestamp": "2023-06-05",
+        "info": "Route Hanoi–Da Nang"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [105.85, 21.03],
+          [108.2, 16.05]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "link_004",
+        "timestamp": "2024-01-10",
+        "info": "Route Da Nang–Qui Nhon"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [108.2, 16.05],
+          [109.2, 13.78]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "link_005",
+        "timestamp": "2023-08-20",
+        "info": "Route Qui Nhon–Nha Trang"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [109.2, 13.78],
+          [109.2, 12.25]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "link_006",
+        "timestamp": "2023-09-15",
+        "info": "Route Nha Trang–Ho Chi Minh City"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [109.2, 12.25],
+          [106.7, 10.78]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "link_007",
+        "timestamp": "2023-10-01",
+        "info": "Route Hanoi–Hai Phong"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [105.85, 21.03],
+          [106.68, 20.85]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "link_008",
+        "timestamp": "2023-11-18",
+        "info": "Route Hai Phong–Da Nang"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [106.68, 20.85],
+          [108.2, 16.05]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "link_009",
+        "timestamp": "2024-03-05",
+        "info": "Route Nha Trang–Da Lat"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [109.2, 12.25],
+          [108.45, 11.94]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "link_010",
+        "timestamp": "2024-04-15",
+        "info": "Route Da Lat–Ho Chi Minh City"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [108.45, 11.94],
+          [106.7, 10.78]
+        ]
+      }
+    }
+  ]
+}
